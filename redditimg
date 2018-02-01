@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# Downloads images from a given subreddit
+
+
+import json
+import os
+import pprint
+import praw
+import subprocess
+import sys
+
+
+subreddit = ""
+destination = ""
+num_submissions = 10
+
+
+def print_usage():
+    print("Usage: {0} <subreddit> <destination> [number of submissions (default 10)]".format(sys.argv[0]))
+
+
+def handle_args():
+    global subreddit
+    global destination
+    global num_submissions
+
+    if len(sys.argv) >= 3:
+        subreddit = sys.argv[1]
+        destination = sys.argv[2]
+        if len(sys.argv) >= 4:
+            num_submissions = int(sys.argv[3])
+    else:
+        print_usage()
+        exit(1)
+
+
+
+def main():
+    handle_args()
+
+    # Retrieve secrets
+    with open("/home/jcguy/project/redditimg/secrets") as f:
+        client_id = f.readline().strip("\n")
+        client_secret = f.readline().strip("\n")
+        username = f.readline().strip("\n")
+        password = f.readline().strip("\n")
+        user_agent = f.readline().strip("\n")
+
+    # Create Reddit instance (read only for now)
+    reddit = praw.Reddit(client_id=client_id,
+                         client_secret=client_secret,
+                         #password=password,
+                         user_agent=user_agent)
+                         #username=username)
+
+    # See if custom directory has been specified
+    if destination != "":
+        directory = os.path.abspath(destination)
+    else:
+        directory = os.getcwd()
+
+    # Create directory if it doesn't exist
+    if not os.path.exists(directory):
+        subprocess.run("mkdir -p {}".format(directory).split())
+
+    print("[redditimg] Fetching content from {}...".format("/r/" + subreddit))
+
+    try:
+        for i, submission in enumerate(reddit.subreddit(subreddit).top(time_filter="all", limit=num_submissions)):
+            print("[redditimg] Downloading file: {}".format(submission.title))
+
+            padded_number = str(i)
+            while len(padded_number) < 3:
+                padded_number = "0" + padded_number
+
+            clip_title = submission.title.replace(" ", "-")
+            clip_title = "".join([c for c in clip_title if c not in ",.?/\"\'&!|\\"])
+            clip_title = "".join([c for c in clip_title if ord(c) < 128])
+
+            url_snip = submission.url.split("/")[-1]
+
+            title = "{}-{}-{}.mp4".format(padded_number, clip_title, url_snip)
+
+            subprocess.run("youtube-dl -o {} {}".format(title, submission.url).split(), cwd=directory)
+
+    except KeyboardInterrupt:
+        print("\nInterrupted. Quitting.")
+        exit(2)
+
+
+if __name__ == "__main__":
+    main()
