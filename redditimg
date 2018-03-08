@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Downloads images from a given subreddit
-
-
+import hashlib
 import json
 import os
 import pprint
@@ -12,31 +11,47 @@ import sys
 
 subreddit = ""
 destination = ""
+time_range = ""
 num_submissions = 10
+hashes = []
 
 
 def print_usage():
-    print("Usage: {0} <subreddit> <destination> [number of submissions (default 10)]".format(sys.argv[0]))
+    print("Usage: {0} <subreddit> <destination> <time range> [number of submissions (default 10)]".format(sys.argv[0]))
 
 
 def handle_args():
     global subreddit
     global destination
+    global time_range
     global num_submissions
 
-    if len(sys.argv) >= 3:
+    if len(sys.argv) >= 4:
         subreddit = sys.argv[1]
         destination = sys.argv[2]
-        if len(sys.argv) >= 4:
-            num_submissions = int(sys.argv[3])
+        time_range = sys.argv[3]
+        if len(sys.argv) >= 5:
+            num_submissions = int(sys.argv[4])
     else:
         print_usage()
         exit(1)
 
+    if time_range not in ["all", "day", "hour", "month", "week", "year"]:
+        print("Time range must be one of: all, day, hour, month, week, year")
+        exit(1)
+
+
+def md5(fname):
+    md5_hash = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5_hash.update(chunk)
+    return md5_hash.hexdigest()
 
 
 def main():
     handle_args()
+    global hashes
 
     # Retrieve secrets
     with open("/home/jcguy/project/redditimg/secrets") as f:
@@ -59,29 +74,54 @@ def main():
     else:
         directory = os.getcwd()
 
+    # Initialize the hash_file with what's already there
+    if os.path.exists(directory):
+        for f in os.listdir(directory):
+            hashes.append(md5(os.path.join(directory, f)))
     # Create directory if it doesn't exist
-    if not os.path.exists(directory):
+    else:
         subprocess.run("mkdir -p {}".format(directory).split())
 
     print("[redditimg] Fetching content from {}...".format("/r/" + subreddit))
 
     try:
-        for i, submission in enumerate(reddit.subreddit(subreddit).top(time_filter="all", limit=num_submissions)):
+        for i, submission in enumerate(reddit.subreddit(subreddit).top(time_filter=time_range, limit=num_submissions)):
             print("[redditimg] Downloading file: {}".format(submission.title))
 
             padded_number = str(i)
             while len(padded_number) < 3:
                 padded_number = "0" + padded_number
 
-            clip_title = submission.title.replace(" ", "-")
-            clip_title = "".join([c for c in clip_title if c not in ",.?/\"\'&!|\\"])
-            clip_title = "".join([c for c in clip_title if ord(c) < 128])
+            clip_title = submission.title.replace(" ", "_")
+            clip_title = "".join([c for c in clip_title if c not in "[]()%,.?/\"\'&!|\\"])
+            clip_title = "".join([c for c in clip_title if 47 < ord(c) < 123])
 
             url_snip = submission.url.split("/")[-1]
 
-            title = "{}-{}-{}.mp4".format(padded_number, clip_title, url_snip)
+            if len(clip_title) > 20:
+                clip_title = clip_title[:19]
+
+            if clip_title[-1] == "_":
+                clip_title = clip_title[:-1]
+
+            title = "{}-{}-{}".format(padded_number, clip_title, url_snip)
+            filename, ext = os.path.splitext(title)
+
+            if ext == "":
+                title += ".mp4"
+            else:
+                title = filename + ".mp4"
 
             subprocess.run("youtube-dl -o {} {}".format(title, submission.url).split(), cwd=directory)
+
+            try:
+                md5_hash = md5(os.path.join(directory, title))
+                if md5_hash in hashes:
+                    pass
+                else:
+                    hashes.append(md5_hash)
+            except FileNotFoundError:
+                pass
 
     except KeyboardInterrupt:
         print("\nInterrupted. Quitting.")
