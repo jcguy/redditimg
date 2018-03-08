@@ -85,7 +85,9 @@ def main():
     print("[redditimg] Fetching content from {}...".format("/r/" + subreddit))
 
     try:
-        for i, submission in enumerate(reddit.subreddit(subreddit).top(time_filter=time_range, limit=num_submissions)):
+        for i, submission in enumerate(reddit.subreddit(subreddit)
+                                             .top(time_filter=time_range,
+                                                  limit=num_submissions)):
             print("[redditimg] Downloading file: {}".format(submission.title))
 
             padded_number = str(i)
